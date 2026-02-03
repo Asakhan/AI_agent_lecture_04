@@ -28,3 +28,7 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+data/*.json
+data/chroma_db/
+data/test_chroma_db/
+data/conversations/

@@ -39,8 +39,10 @@ AI 리서치 어시스턴트 메인 실행 파일
 
 import logging
 import sys
-from openai import APIError, APIConnectionError, RateLimitError
+from openai import APIError, APIConnectionError, RateLimitError, OpenAI
 from src.memory_manager import MemoryManager
+from src.search_agent import SearchAgent
+from src.orchestrator import AutonomousOrchestrator
 from src.conversation_manager import (
     ConversationManager,
     APIKeyNotFoundError,
@@ -101,6 +103,8 @@ def print_welcome() -> None:
     print("  • status             : 현재 상태 확인")
     print("  • memory / 메모리     : 메모리 통계 보기")
     print("  • memory-search <검색어> : 메모리 직접 검색")
+    print("  • auto <목표>        : 🆕 자율 실행 모드")
+    print("  • auto-stats / 자율통계 : 🆕 자율 실행 통계")
     print()
     print("💡 검색 활용 팁:")
     print("  • '~에 대해 조사해줘' → 웹 검색 실행")
@@ -256,6 +260,12 @@ def handle_command(command: str, manager: ConversationManager) -> bool:
         print(f"  • 검색 횟수: {manager.get_search_count()}회")
         print()
         return True
+
+    # auto만 입력 시 사용법 안내 (목표 없이 실행 방지)
+    if command == 'auto':
+        print("사용법: auto <목표>")
+        print("예시: auto AI 반도체 시장 동향 분석")
+        return True
     
     return False
 
@@ -281,6 +291,18 @@ def main() -> None:
             persist_directory="data/chroma_db"
         )
         print(f"✓ Memory System Ready ({memory_manager.collection.count()} documents)")
+
+        # SearchAgent 초기화 (자율 실행용)
+        search_agent = SearchAgent(memory_manager=memory_manager)
+
+        # AutonomousOrchestrator 초기화
+        print("Initializing Autonomous Orchestrator...")
+        orchestrator = AutonomousOrchestrator(
+            client=OpenAI(),
+            memory_manager=memory_manager,
+            search_agent=search_agent,
+        )
+        print("✓ Autonomous Orchestrator Ready")
         
         # ConversationManager 초기화 (메모리 연결)
         try:
@@ -341,6 +363,36 @@ def main() -> None:
                             print(f"\n{i}. [유사도: {r['similarity']:.2f}]")
                             print(f"   {r['text'][:200]}...")
                             print(f"   출처: {r['metadata'].get('source', 'unknown')}")
+                    continue
+
+                # 자율 실행 모드 (auto만 입력 시 사용법은 handle_command에서 처리)
+                if user_input_lower.startswith("auto "):
+                    goal = user_input[5:].strip()
+                    if not goal:
+                        print("사용법: auto <목표>")
+                        print("예시: auto AI 반도체 시장 동향 분석")
+                        continue
+                    print(f"\n🚀 자율 실행 모드 시작")
+                    print(f"목표: {goal}")
+                    print("-" * 50)
+                    try:
+                        result = orchestrator.execute(goal, verbose=True)
+                        print("\n" + "=" * 50)
+                        print("📋 최종 리포트")
+                        print("=" * 50)
+                        print(result)
+                    except Exception as e:
+                        print(f"❌ 자율 실행 오류: {e}")
+                    continue
+
+                if user_input_lower in ["auto-stats", "자율통계"]:
+                    stats = orchestrator.get_stats()
+                    print("\n📊 자율 실행 통계")
+                    print(f"  총 실행 횟수: {stats['total_executions']}")
+                    if stats["quality_stats"]:
+                        qs = stats["quality_stats"]
+                        print(f"  평균 품질 점수: {qs.get('average_score', 0):.1f}/10")
+                        print(f"  품질 통과율: {qs.get('pass_rate', 0) * 100:.1f}%")
                     continue
                 
                 # 명령어 처리 (handle_command 함수 사용)
